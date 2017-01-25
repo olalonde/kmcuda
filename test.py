@@ -479,6 +479,31 @@ class KmeansTests(unittest.TestCase):
         self.assertEqual(numpy.min(assignments), 0)
         self.assertEqual(numpy.max(assignments), 3)
 
+    @unittest.skipUnless(supports_fp16,
+                         "16-bit floats are not supported by this CUDA arch")
+    def test_fp16_l1(self):
+        arr = self.samples.astype(numpy.float16)
+        #with self.stdout:
+        centroids, assignments = kmeans_cuda(
+            arr, 4, init="kmeans++", metric="l1", device=1, verbosity=2,
+            seed=3)
+        """
+        self.assertEqual(self._get_iters_number(self.stdout), 5)
+        self.assertEqual(len(centroids), 4)
+        for c in centroids:
+            norm = numpy.linalg.norm(c)
+            self.assertTrue(0.9995 < norm < 1.0005)
+        dists = numpy.round(cosine_distances(centroids)).astype(int)
+        self.assertTrue((dists == [
+            [0, 2, 1, 1],
+            [2, 0, 1, 1],
+            [1, 1, 0, 2],
+            [1, 1, 2, 0],
+        ]).all())
+        self.assertEqual(numpy.min(assignments), 0)
+        self.assertEqual(numpy.max(assignments), 3)
+        """
+
     def _test_average_distance(self, dev):
         centroids, assignments, distance = kmeans_cuda(
             self.samples, 50, init="kmeans++", device=dev,

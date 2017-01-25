@@ -77,6 +77,10 @@ FPATTR float _mul(float v1, float v2) {
   return v1 * v2;
 }
 
+FPATTR float _abs(float v) {
+  return abs(v);
+}
+
 FPATTR float _reciprocal(float v) {
   return __frcp_rn(v);
 }
@@ -151,8 +155,21 @@ FPATTR half2 _mul(half2 v1, half2 v2) {
   return __hmul2(v1, v2);
 }
 
+FPATTR half _abs(half v) {
+  if (__hge(v, _const<half>(0))) {
+    return v;
+  }
+  return __hneg(v);
+}
+
 FPATTR half _reciprocal(half v) {
   return hrcp(v);
+}
+
+FPATTR half2 _abs(half2 v) {
+  half2 v1 = _mul(v, __hge2(v, _const<half2>(0)));
+  half2 v2 = _mul(v, __hlt2(v, _const<half2>(0)));
+  return __hadd2(v1, v2);
 }
 
 FPATTR half2 _reciprocal(half2 v) {

@@ -82,6 +82,50 @@ struct METRIC<kmcudaDistanceMetricL2, F> {
 };
 
 template <typename F>
+struct METRIC<kmcudaDistanceMetricL1, F> {
+  FPATTR static float distance(const F *__restrict__ v1, const F *__restrict__ v2) {
+    // Kahan summation with inverted c
+    F dist = _const<F>(0), corr = _const<F>(0);
+    #pragma unroll 4
+    for (uint16_t f = 0; f < d_features_size; f++) {
+      F d = _sub(v1[f], v2[f]);
+      F y = _add(corr, _abs(d));
+      F t = _add(dist, y);
+      corr = _sub(y, _sub(t, dist));
+      dist = t;
+    }
+    return _sqrt(_float(_fin(dist)));
+  }
+
+  FPATTR static float partial(const F *__restrict__ v1, const F *__restrict__ v2,
+                              uint16_t size) {
+    // Kahan summation with inverted c
+    F dist = _const<F>(0), corr = _const<F>(0);
+    #pragma unroll 4
+    for (uint16_t f = 0; f < size; f++) {
+      F d = _sub(v1[f], v2[f]);
+      F y = _add(corr, _abs(d));
+      F t = _add(dist, y);
+      corr = _sub(y, _sub(t, dist));
+      dist = t;
+    }
+    return _float(_fin(dist));
+  }
+
+  FPATTR static float finalize(float partial) {
+    return partial;
+  }
+
+  FPATTR static void normalize(uint32_t count, F *vec) {
+    F rc = _reciprocal(_const<F>(count));
+    #pragma unroll 4
+    for (int f = 0; f < d_features_size; f++) {
+      vec[f] = _mul(vec[f], rc);
+    }
+  }
+};
+
+template <typename F>
 struct METRIC<kmcudaDistanceMetricCosine, F> {
   FPATTR static F sum_squares(
       const F *__restrict__ vec, F *__restrict__ cache) {

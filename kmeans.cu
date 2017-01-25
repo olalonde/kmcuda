@@ -241,6 +241,181 @@ __global__ void kmeans_assign_lloyd(
   }
 }
 
+template <typename F>
+__global__ void kmeans_assign_lloyd_smallc_l1(
+    const uint32_t length, const F *__restrict__ samples,
+    const F *__restrict__ centroids, uint32_t *__restrict__ assignments_prev,
+    uint32_t * __restrict__ assignments) {
+  using HF = typename HALF<F>::type;
+  uint32_t sample = blockIdx.x * blockDim.x + threadIdx.x;
+  if (sample >= length) {
+    return;
+  }
+  samples += static_cast<uint64_t>(sample) * d_features_size;
+  HF min_dist = _fmax<HF>();
+  uint32_t nearest = UINT32_MAX;
+  extern __shared__ float _shared_samples[];
+  F *shared_samples = reinterpret_cast<F *>(_shared_samples);
+  F *shared_centroids = shared_samples + blockDim.x * d_features_size;
+  const uint32_t soffset = threadIdx.x * d_features_size;
+  const uint32_t cstep = d_shmem_size / d_features_size - blockDim.x;
+  const uint32_t size_each = cstep /
+      min(blockDim.x, length - blockIdx.x * blockDim.x);
+  bool insane = _neq(samples[0], samples[0]);
+
+  for (uint32_t gc = 0; gc < d_clusters_size; gc += cstep) {
+    uint32_t coffset = gc * d_features_size;
+    __syncthreads();
+    for (uint32_t i = 0; i < size_each; i++) {
+      uint32_t ci = threadIdx.x * size_each + i;
+      uint32_t local_offset = ci * d_features_size;
+      uint32_t global_offset = coffset + local_offset;
+      if (global_offset < d_clusters_size * d_features_size && ci < cstep) {
+        for (int f = 0; f < d_features_size; f++) {
+          shared_centroids[local_offset + f] = centroids[global_offset + f];
+        }
+      }
+    }
+    __syncthreads();
+    if (insane) {
+      continue;
+    }
+    for (uint32_t c = gc; c < gc + cstep && c < d_clusters_size; c++) {
+      F dist2 = _const<F>(0), corr = _const<F>(0);
+      coffset = (c - gc) * d_features_size;
+      #pragma unroll 4
+      for (int f = 0; f < d_features_size; f++) {
+        F delta = _abs(_sub(shared_samples[soffset + f], shared_centroids[coffset + f]));
+        F y = _add(corr, delta);
+        F t = _add(dist2, y);
+        corr = _sub(y, _sub(t, dist2));
+        dist2 = t;
+      }
+      HF dist = _fin(dist2);
+      if (_lt(dist, min_dist)) {
+        min_dist = dist;
+        nearest = c;
+      }
+    }
+  }
+  if (nearest == UINT32_MAX) {
+    if (!insane) {
+      printf("CUDA kernel kmeans_assign: nearest neighbor search failed for "
+             "sample %" PRIu32 "\n", sample);
+      return;
+    } else {
+      nearest = d_clusters_size;
+    }
+  }
+  uint32_t ass = assignments[sample];
+  assignments_prev[sample] = ass;
+  if (ass != nearest) {
+    assignments[sample] = nearest;
+    atomicAggInc(&d_changed_number);
+  }
+}
+
+template <typename F>
+__global__ void kmeans_assign_lloyd_l1(
+    const uint32_t length, const F *__restrict__ samples,
+    const F *__restrict__ centroids, uint32_t *__restrict__ assignments_prev,
+    uint32_t * __restrict__ assignments) {
+  using HF = typename HALF<F>::type;
+  uint32_t sample = blockIdx.x * blockDim.x + threadIdx.x;
+  if (sample >= length) {
+    return;
+  }
+  samples += static_cast<uint64_t>(sample) * d_features_size;
+  HF min_dist = _fmax<HF>();
+  uint32_t nearest = UINT32_MAX;
+  extern __shared__ float _shared_centroids[];
+  F *shared_centroids = reinterpret_cast<F *>(_shared_centroids);
+  const uint32_t cstep = d_shmem_size / d_features_size;
+  const uint32_t size_each = cstep /
+      min(blockDim.x, length - blockIdx.x * blockDim.x);
+  bool insane = _neq(samples[0], samples[0]);
+
+  for (uint32_t gc = 0; gc < d_clusters_size; gc += cstep) {
+    uint32_t coffset = gc * d_features_size;
+    __syncthreads();
+    for (uint32_t i = 0; i < size_each; i++) {
+      uint32_t ci = threadIdx.x * size_each + i;
+      uint32_t local_offset = ci * d_features_size;
+      uint32_t global_offset = coffset + local_offset;
+      if (global_offset < d_clusters_size * d_features_size && ci < cstep) {
+        for (int f = 0; f < d_features_size; f++) {
+          shared_centroids[local_offset + f] = centroids[global_offset + f];
+        }
+      }
+    }
+    __syncthreads();
+    if (insane) {
+      continue;
+    }
+    for (uint32_t c = gc; c < gc + cstep && c < d_clusters_size; c++) {
+      F dist2 = _const<F>(0), corr = _const<F>(0);
+      coffset = (c - gc) * d_features_size;
+      for (int f = 0; f < d_features_size; f++) {
+        F delta = _abs(_sub(samples[f], shared_centroids[coffset + f]));
+        F y = _add(corr, delta);
+        F t = _add(dist2, y);
+        corr = _sub(y, _sub(t, dist2));
+        dist2 = t;
+      }
+      HF dist = _fin(dist2);
+      if (_lt(dist, min_dist)) {
+        min_dist = dist;
+        nearest = c;
+      }
+    }
+  }
+  if (nearest == UINT32_MAX) {
+    if (!insane) {
+      printf("CUDA kernel kmeans_assign: nearest neighbor search failed for "
+             "sample %" PRIu32 "\n", sample);
+      return;
+    } else {
+      nearest = d_clusters_size;
+    }
+  }
+  uint32_t ass = assignments[sample];
+  assignments_prev[sample] = ass;
+  if (ass != nearest) {
+    assignments[sample] = nearest;
+    atomicAggInc(&d_changed_number);
+  }
+}
+
+template <KMCUDADistanceMetric M, typename F>
+struct KmeansAssignGlobals {
+  template <typename... Args>
+  static void kmeans_assign_lloyd_smallc(
+      dim3 grid, dim3 block, int shmem, Args... args) {
+    ::kmeans_assign_lloyd_smallc<M, F><<<grid, block, shmem>>>(args...);
+  }
+
+  template <typename... Args>
+  static void kmeans_assign_lloyd(
+      dim3 grid, dim3 block, int shmem, Args... args) {
+    ::kmeans_assign_lloyd<M, F><<<grid, block, shmem>>>(args...);
+  }
+};  // generic KmeansAssignGlobals
+
+template <typename F>
+struct KmeansAssignGlobals<kmcudaDistanceMetricL1, F> {
+  template <typename... Args>
+  static void kmeans_assign_lloyd_smallc(
+      dim3 grid, dim3 block, int shmem, Args... args) {
+    ::kmeans_assign_lloyd_smallc_l1<F><<<grid, block, shmem>>>(args...);
+  }
+
+  template <typename... Args>
+  static void kmeans_assign_lloyd(
+      dim3 grid, dim3 block, int shmem, Args... args) {
+    ::kmeans_assign_lloyd_l1<F><<<grid, block, shmem>>>(args...);
+  }
+};  // KmeansAssignGlobals<kmcudaDistanceMetricL1>
+
 template <KMCUDADistanceMetric M, typename F>
 __global__ void kmeans_adjust(
     const uint32_t coffset, const uint32_t length,
@@ -742,15 +917,15 @@ KMCUDAResult kmeans_cuda_lloyd(
         int64_t ssqrmem = sblock.x * h_features_size * sizeof(float);
         if (shmem_size > ssqrmem && shmem_size - ssqrmem >=
             static_cast<int>((h_features_size + 1) * sizeof(float))) {
-          KERNEL_SWITCH(kmeans_assign_lloyd_smallc, <<<sgrid, sblock, shmem_size>>>(
-              length,
+          KERNEL_SWITCH(KmeansAssignGlobals,
+              ::kmeans_assign_lloyd_smallc(sgrid, sblock, shmem_size, length,
               reinterpret_cast<const F*>(samples[devi].get() + offset * h_features_size),
               reinterpret_cast<const F*>((*centroids)[devi].get()),
               (*assignments_prev)[devi].get() + offset,
               (*assignments)[devi].get() + offset));
         } else {
-          KERNEL_SWITCH(kmeans_assign_lloyd, <<<sgrid, sblock, shmem_size>>>(
-              length,
+          KERNEL_SWITCH(KmeansAssignGlobals,
+              ::kmeans_assign_lloyd(sgrid, sblock, shmem_size, length,
               reinterpret_cast<const F*>(samples[devi].get() + offset * h_features_size),
               reinterpret_cast<const F*>((*centroids)[devi].get()),
               (*assignments_prev)[devi].get() + offset,

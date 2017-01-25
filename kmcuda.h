@@ -20,6 +20,7 @@ enum KMCUDAInitMethod {
 
 enum KMCUDADistanceMetric {
   kmcudaDistanceMetricL2,
+  kmcudaDistanceMetricL1,
   kmcudaDistanceMetricCosine
 };
 

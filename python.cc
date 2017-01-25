@@ -77,6 +77,9 @@ static const std::unordered_map<std::string, KMCUDADistanceMetric > metrics {
     {"euclidean", kmcudaDistanceMetricL2},
     {"L2", kmcudaDistanceMetricL2},
     {"l2", kmcudaDistanceMetricL2},
+    {"manhattan", kmcudaDistanceMetricL1},
+    {"L1", kmcudaDistanceMetricL1},
+    {"l1", kmcudaDistanceMetricL1},
     {"cos", kmcudaDistanceMetricCosine},
     {"cosine", kmcudaDistanceMetricCosine},
     {"angular", kmcudaDistanceMetricCosine}

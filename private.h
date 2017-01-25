@@ -151,6 +151,15 @@ FOR_EACH_DEV(CUCH(cudaDeviceSynchronize(), kmcudaRuntimeError)); \
         f<kmcudaDistanceMetricL2, half2>__VA_ARGS__; \
     } \
     break; \
+  case kmcudaDistanceMetricL1: \
+    if (!fp16x2) { \
+        using F = float; \
+        f<kmcudaDistanceMetricL1, float>__VA_ARGS__; \
+    } else { \
+        using F = half2; \
+        f<kmcudaDistanceMetricL1, half2>__VA_ARGS__; \
+    } \
+    break; \
   case kmcudaDistanceMetricCosine: \
     if (!fp16x2) { \
         using F = float; \
@@ -166,6 +175,10 @@ FOR_EACH_DEV(CUCH(cudaDeviceSynchronize(), kmcudaRuntimeError)); \
   case kmcudaDistanceMetricL2: \
     using F = float; \
     f<kmcudaDistanceMetricL2, float>__VA_ARGS__; \
+    break; \
+  case kmcudaDistanceMetricL1: \
+    using F = float; \
+    f<kmcudaDistanceMetricL1, float>__VA_ARGS__; \
     break; \
   case kmcudaDistanceMetricCosine: \
     using F = float; \
