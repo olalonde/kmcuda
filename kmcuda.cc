@@ -23,15 +23,13 @@ static KMCUDAResult check_kmeans_args(
     uint16_t features_size,
     uint32_t clusters_size,
     uint32_t device,
-    bool fp16x2,
-    int verbosity,
     const float *samples,
     float *centroids,
     uint32_t *assignments) {
   if (clusters_size < 2 || clusters_size == UINT32_MAX) {
     return kmcudaInvalidArguments;
   }
-  if (features_size == 0) {
+  if (features_size == 0 || features_size > MAX_FEATURES) {
     return kmcudaInvalidArguments;
   }
   if (samples_size < clusters_size) {
@@ -384,7 +382,7 @@ KMCUDAResult kmeans_cuda(
         average_distance);
   RETERR(check_kmeans_args(
       tolerance, yinyang_t, samples_size, features_size, clusters_size,
-      device, fp16x2, verbosity, samples, centroids, assignments));
+      device, samples, centroids, assignments));
   INFO("reassignments threshold: %" PRIu32 "\n", uint32_t(tolerance * samples_size));
   uint32_t yy_groups_size = yinyang_t * clusters_size;
   DEBUG("yinyang groups: %" PRIu32 "\n", yy_groups_size);
@@ -506,16 +504,15 @@ KMCUDAResult kmeans_cuda(
 
 static KMCUDAResult check_knn_args(
     uint16_t k, uint32_t samples_size, uint16_t features_size,
-    uint32_t clusters_size, uint32_t device, int32_t fp16x2, int32_t verbosity,
-    const float *samples, const float *centroids, const uint32_t *assignments,
-    uint32_t *neighbors) {
+    uint32_t clusters_size, uint32_t device, const float *samples,
+    const float *centroids, const uint32_t *assignments, uint32_t *neighbors) {
   if (k == 0) {
     return kmcudaInvalidArguments;
   }
   if (clusters_size < 2 || clusters_size == UINT32_MAX) {
     return kmcudaInvalidArguments;
   }
-  if (features_size == 0) {
+  if (features_size == 0 || features_size > MAX_FEATURES) {
     return kmcudaInvalidArguments;
   }
   if (samples_size < clusters_size) {
@@ -550,8 +547,8 @@ KMCUDAResult knn_cuda(
         k, metric, samples_size, features_size, clusters_size, device,
         device_ptrs, fp16x2, verbosity, samples, centroids, assignments,
         neighbors);
-  check_knn_args(k, samples_size, features_size, clusters_size, device, fp16x2,
-                 verbosity, samples, centroids, assignments, neighbors);
+  check_knn_args(k, samples_size, features_size, clusters_size, device, samples,
+                 centroids, assignments, neighbors);
   auto devs = setup_devices(device, device_ptrs, verbosity);
   if (devs.empty()) {
     return kmcudaNoSuchDevice;
